@@ -25,3 +25,16 @@ Keep this PowerShell window open while the bot is used. Stop it with `Ctrl+C`.
 - `/help` — display command help.
 
 The first release deliberately provides only Dmitry's personal area. Family access and external actions require separate user and confirmation flows.
+
+## Natural dialogue and family tasks
+
+Commands are optional. The bot recognises common Russian phrases locally:
+
+- `Запомни идею для проекта` saves a personal note.
+- `Нужно подготовить отчёт до пятницы` creates a personal task with a due date.
+- `Ева, нужно оплатить кружок до пятницы` creates a family task for Eva and notifies her after her chat is paired.
+- `Какая погода завтра?` and Internet questions are recognised but wait for their respective secure providers; the bot does not invent an answer.
+
+The bottom Telegram keyboard provides **Today**, **Tasks**, **Calendar**, **Weather**, and **Summary**. It is an overview, not a replacement for natural conversation.
+
+To pair Eva, she sends `/start` to the bot. Add her returned chat ID locally as `TELEGRAM_EVA_CHAT_ID` in `.env`, then restart the adapter. This permits task notifications, but does not expose either user's personal notes.

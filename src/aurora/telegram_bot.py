@@ -15,6 +15,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from .core import AuroraCore
+from .intent import Intent, classify_message
 
 
 def load_dotenv(path: str | Path = ".env") -> None:
@@ -55,28 +56,93 @@ class TelegramClient:
     def get_updates(self, offset: int | None = None):
         return self.call("getUpdates", offset=offset, timeout=30, allowed_updates=json.dumps(["message"]))
 
-    def send_message(self, chat_id: int, text: str) -> None:
-        self.call("sendMessage", chat_id=chat_id, text=text)
+    def send_message(self, chat_id: int, text: str, reply_markup: dict | None = None) -> None:
+        markup = json.dumps(reply_markup, ensure_ascii=False) if reply_markup else None
+        self.call("sendMessage", chat_id=chat_id, text=text, reply_markup=markup)
 
 
 class AuroraTelegramBot:
-    def __init__(self, client: TelegramClient, core: AuroraCore, owner_chat_id: int | None = None) -> None:
+    MENU = {
+        "keyboard": [["🗓 Сегодня", "✅ Задачи"], ["📅 Календарь", "🌦 Погода"], ["📰 Сводка"]],
+        "resize_keyboard": True,
+    }
+
+    def __init__(
+        self,
+        client: TelegramClient,
+        core: AuroraCore,
+        owner_chat_id: int | None = None,
+        eva_chat_id: int | None = None,
+    ) -> None:
         self.client = client
         self.core = core
         self.owner_chat_id = owner_chat_id
+        self.eva_chat_id = eva_chat_id
 
     @staticmethod
     def _help() -> str:
         return (
-            "AURORA MVP commands:\n"
-            "/note <text> — save a personal note\n"
-            "/find <text> — search personal notes\n"
-            "/task <text> — create a personal task\n"
-            "/tasks — list open personal tasks\n"
-            "/done <task-id> — complete a task\n"
-            "/backup — create a local personal export\n"
-            "/help — show this help"
+            "Пишите обычными словами — AURORA поймёт заметку, задачу или вопрос.\n"
+            "Например: «Ева, нужно оплатить кружок до пятницы» или «Запомни идею для проекта».\n\n"
+            "Кнопки снизу показывают главное. Команды остаются как резервный вариант: /note, /task, /tasks, /done, /backup."
         )
+
+    def _user_for_chat(self, chat_id: int) -> str | None:
+        if chat_id == self.owner_chat_id:
+            return "dmitry"
+        if chat_id == self.eva_chat_id:
+            return "eva"
+        return None
+
+    @staticmethod
+    def _task_line(task: dict) -> str:
+        due = f" · до {task['due_at']}" if task.get("due_at") else ""
+        return f"• {task['title']}{due}\n  ID: {task['id']}"
+
+    def _today(self, actor: str) -> str:
+        tasks = self.core.list_tasks_for_assignee(actor, actor, "open")
+        if not tasks:
+            return "На сегодня нет открытых задач."
+        return "Ваши открытые задачи:\n" + "\n".join(self._task_line(task) for task in tasks[:10])
+
+    def _create_task(self, actor: str, intent: Intent) -> str:
+        assignee = intent.assignee or actor
+        space = "family" if assignee != actor else actor
+        task = self.core.create_task(actor, space, intent.text, assignee=assignee, due_at=intent.due_at)
+        recipient_chat = self.eva_chat_id if assignee == "eva" else self.owner_chat_id
+        if recipient_chat and assignee != actor:
+            self.client.send_message(
+                recipient_chat,
+                f"AURORA: новая семейная задача для вас\n{self._task_line(task)}",
+                self.MENU,
+            )
+            notified = " Исполнителю отправлено уведомление."
+        elif assignee != actor:
+            notified = " Уведомление будет отправлено после привязки Telegram-чата исполнителя."
+        else:
+            notified = ""
+        return f"Задача создана:\n{self._task_line(task)}{notified}"
+
+    def _handle_natural(self, actor: str, text: str) -> str:
+        intent = classify_message(text, actor)
+        if intent.kind == "today":
+            return self._today(actor)
+        if intent.kind == "tasks":
+            return self._today(actor)
+        if intent.kind == "note":
+            if not intent.text:
+                return "Напишите текст заметки после слова «запомни» или «сохрани»."
+            note = self.core.add_note(actor, actor, intent.text)
+            return f"Запомнила. Заметка сохранена: {note['id']}"
+        if intent.kind == "task":
+            return self._create_task(actor, intent)
+        if intent.kind == "calendar":
+            return "Я распознала запрос о календаре. Подключение календаря готовится; пока не создаю внешнее событие без вашего подтверждения."
+        if intent.kind == "weather":
+            return "Я распознала запрос о погоде. Подключение погодного сервиса будет следующим внешним адаптером; пока не буду выдумывать прогноз."
+        if intent.kind == "research":
+            return "Я распознала вопрос или запрос поиска. Для ответа с актуальными источниками нужно подключить поисковый и LLM-провайдеры; сейчас этот контур ещё не активирован."
+        return "Я не хочу неверно угадать. Напишите, например: «Запомни ...», «Нужно ...», «Ева, нужно ...» или задайте вопрос с вопросительным знаком."
 
     def handle_message(self, chat_id: int, text: str) -> str:
         if self.owner_chat_id is None:
@@ -84,7 +150,8 @@ class AuroraTelegramBot:
                 f"AURORA is waiting for secure pairing. Your Telegram chat ID: {chat_id}.\n"
                 "Add this number as TELEGRAM_OWNER_CHAT_ID in the local .env file, then restart the bot."
             )
-        if chat_id != self.owner_chat_id:
+        actor = self._user_for_chat(chat_id)
+        if actor is None:
             return "Access denied. This AURORA bot is private."
 
         command, _, argument = text.strip().partition(" ")
@@ -94,49 +161,53 @@ class AuroraTelegramBot:
         if command == "/note":
             if not argument.strip():
                 return "Usage: /note <text>"
-            note = self.core.add_note("dmitry", "dmitry", argument)
+            note = self.core.add_note(actor, actor, argument)
             return f"Note saved: {note['id']}"
         if command == "/find":
-            notes = self.core.find_notes("dmitry", "dmitry", argument)
+            notes = self.core.find_notes(actor, actor, argument)
             if not notes:
                 return "No matching personal notes found."
             return "\n\n".join(f"• {note['text']}\n{note['created_at']}" for note in notes[:10])
         if command == "/task":
             if not argument.strip():
                 return "Usage: /task <text>"
-            task = self.core.create_task("dmitry", "dmitry", argument)
+            task = self.core.create_task(actor, actor, argument)
             return f"Task created: {task['title']}\nID: {task['id']}"
         if command == "/tasks":
-            tasks = self.core.list_tasks("dmitry", "dmitry", "open")
+            tasks = self.core.list_tasks_for_assignee(actor, actor, "open")
             if not tasks:
                 return "No open personal tasks."
-            return "\n".join(f"• {task['title']}\n  ID: {task['id']}" for task in tasks[:20])
+            return "\n".join(self._task_line(task) for task in tasks[:20])
         if command == "/done":
             if not argument.strip():
                 return "Usage: /done <task-id>"
-            task = self.core.update_task_status("dmitry", argument.strip(), "done")
+            task = self.core.update_task_status(actor, argument.strip(), "done")
             return f"Task completed: {task['title']}"
         if command == "/backup":
-            destination = Path("exports") / f"telegram-dmitry-{int(time.time())}.json"
-            exported = self.core.export_space("dmitry", "dmitry", destination)
+            destination = Path("exports") / f"telegram-{actor}-{int(time.time())}.json"
+            exported = self.core.export_space(actor, actor, destination)
             return f"Local backup created: {exported}"
-        return "Unknown command. Send /help."
+        if command.startswith("/"):
+            return "Unknown command. Send /help."
+        return self._handle_natural(actor, text)
 
     def process_update(self, update: dict) -> None:
         message = update.get("message")
         if not message or "text" not in message:
             return
         chat_id = message["chat"]["id"]
-        self.client.send_message(chat_id, self.handle_message(chat_id, message["text"]))
+        self.client.send_message(chat_id, self.handle_message(chat_id, message["text"]), self.MENU)
 
 
 def run_polling(data_path: str | Path = "data/aurora.json", env_path: str | Path = ".env") -> None:
     load_dotenv(env_path)
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
     owner_value = os.environ.get("TELEGRAM_OWNER_CHAT_ID", "").strip()
+    eva_value = os.environ.get("TELEGRAM_EVA_CHAT_ID", "").strip()
     owner_chat_id = int(owner_value) if owner_value else None
+    eva_chat_id = int(eva_value) if eva_value else None
     client = TelegramClient(token)
-    bot = AuroraTelegramBot(client, AuroraCore(data_path), owner_chat_id)
+    bot = AuroraTelegramBot(client, AuroraCore(data_path), owner_chat_id, eva_chat_id)
     offset = None
     print("AURORA Telegram adapter started. Press Ctrl+C to stop.")
     while True:

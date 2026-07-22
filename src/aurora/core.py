@@ -34,6 +34,10 @@ class AuroraCore:
             data = json.load(file)
         for collection in ("notes", "tasks", "audit", "confirmations"):
             data.setdefault(collection, [])
+        for task in data["tasks"]:
+            task.setdefault("assignee", task.get("author", "dmitry"))
+            task.setdefault("description", "")
+            task.setdefault("due_at", None)
         return data
 
     def _save(self) -> None:
@@ -81,12 +85,26 @@ class AuroraCore:
         self._save()
         return records
 
-    def create_task(self, actor: str, space: str, title: str) -> dict:
+    def create_task(
+        self,
+        actor: str,
+        space: str,
+        title: str,
+        assignee: str | None = None,
+        due_at: str | None = None,
+        description: str = "",
+    ) -> dict:
         self._require_access(actor, space)
         if not title.strip():
             raise ValueError("Task title cannot be empty")
+        assignee = assignee or actor
+        if assignee not in {"dmitry", "eva"}:
+            raise ValueError(f"Unknown task assignee: {assignee}")
+        if space != "family" and assignee != actor:
+            raise AccessDenied("A task for another user must be created in the family space")
         now = self._now()
         task = {"id": str(uuid4()), "space": space, "author": actor, "title": title.strip(),
+                "assignee": assignee, "description": description.strip(), "due_at": due_at,
                 "status": "open", "created_at": now, "updated_at": now}
         self.data["tasks"].append(task)
         self._audit(actor, "task.created", task["id"])
@@ -96,6 +114,22 @@ class AuroraCore:
     def list_tasks(self, actor: str, space: str, status: str | None = None) -> list[dict]:
         self._require_access(actor, space)
         tasks = [task for task in self.data["tasks"] if task["space"] == space]
+        if status:
+            if status not in TASK_STATUSES:
+                raise ValueError(f"Unknown task status: {status}")
+            tasks = [task for task in tasks if task["status"] == status]
+        return tasks
+
+    def list_tasks_for_assignee(self, actor: str, assignee: str, status: str | None = None) -> list[dict]:
+        if assignee not in {"dmitry", "eva"}:
+            raise ValueError(f"Unknown task assignee: {assignee}")
+        personal_space = assignee
+        self._require_access(actor, personal_space)
+        tasks = [
+            task for task in self.data["tasks"]
+            if task.get("assignee", task["author"]) == assignee
+            and (task["space"] == personal_space or task["space"] == "family")
+        ]
         if status:
             if status not in TASK_STATUSES:
                 raise ValueError(f"Unknown task status: {status}")

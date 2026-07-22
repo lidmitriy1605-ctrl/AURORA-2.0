@@ -10,8 +10,8 @@ class FakeTelegramClient:
     def __init__(self):
         self.messages = []
 
-    def send_message(self, chat_id, text):
-        self.messages.append((chat_id, text))
+    def send_message(self, chat_id, text, reply_markup=None):
+        self.messages.append((chat_id, text, reply_markup))
 
 
 class AuroraTelegramBotTests(unittest.TestCase):
@@ -44,4 +44,14 @@ class AuroraTelegramBotTests(unittest.TestCase):
     def test_process_update_replies_to_message(self):
         self.bot.process_update({"message": {"chat": {"id": 12345}, "text": "/help"}})
         self.assertEqual(self.client.messages[0][0], 12345)
-        self.assertIn("/note", self.client.messages[0][1])
+        self.assertIn("запомни", self.client.messages[0][1].casefold())
+        self.assertIn("keyboard", self.client.messages[0][2])
+
+    def test_natural_assignment_creates_family_task_and_notifies_eva(self):
+        self.bot.eva_chat_id = 67890
+        reply = self.bot.handle_message(12345, "Ева, нужно оплатить кружок до пятницы")
+        tasks = self.bot.core.list_tasks("eva", "family")
+        self.assertEqual(tasks[0]["assignee"], "eva")
+        self.assertIsNotNone(tasks[0]["due_at"])
+        self.assertIn("Исполнителю отправлено", reply)
+        self.assertEqual(self.client.messages[0][0], 67890)
