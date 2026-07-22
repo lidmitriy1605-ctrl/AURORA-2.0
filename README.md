@@ -24,10 +24,11 @@
 Пример локального запуска:
 
 ```powershell
-$env:PYTHONPATH = 'src'
-python -m aurora.cli note-add dmitry dmitry 'Идея для AURORA'
-python -m aurora.cli task-list dmitry dmitry
+.\tools\aurora.ps1 note-add dmitry dmitry 'Идея для AURORA'
+.\tools\aurora.ps1 task-list dmitry dmitry
 ```
+
+Скрипт запуска автоматически использует UTF-8, поэтому русские заметки и названия задач сохраняются без искажений.
 
 Экспорт одной разрешённой области данных создаёт новую JSON-копию и никогда не перезаписывает прежнюю:
 

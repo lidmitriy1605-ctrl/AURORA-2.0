@@ -9,6 +9,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+[Console]::InputEncoding = [System.Text.UTF8Encoding]::new()
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+$OutputEncoding = [System.Text.UTF8Encoding]::new()
+$env:PYTHONUTF8 = '1'
 $env:PYTHONPATH = Join-Path $PSScriptRoot '..\src'
 $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $path = Join-Path $Directory "aurora-$Space-$timestamp.json"
