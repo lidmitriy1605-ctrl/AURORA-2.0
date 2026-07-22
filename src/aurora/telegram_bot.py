@@ -16,6 +16,7 @@ from urllib.request import Request, urlopen
 
 from .core import AuroraCore
 from .intent import Intent, classify_message
+from .research import GeminiAssistant, ResearchError, TavilySearch
 from .weather import OpenMeteoWeather, WeatherError
 
 
@@ -75,12 +76,16 @@ class AuroraTelegramBot:
         owner_chat_id: int | None = None,
         eva_chat_id: int | None = None,
         weather: OpenMeteoWeather | None = None,
+        search: TavilySearch | None = None,
+        assistant: GeminiAssistant | None = None,
     ) -> None:
         self.client = client
         self.core = core
         self.owner_chat_id = owner_chat_id
         self.eva_chat_id = eva_chat_id
         self.weather = weather
+        self.search = search
+        self.assistant = assistant
 
     @staticmethod
     def _help() -> str:
@@ -152,7 +157,17 @@ class AuroraTelegramBot:
             except WeatherError as error:
                 return str(error)
         if intent.kind == "research":
-            return "Я распознала вопрос или запрос поиска. Для ответа с актуальными источниками нужно подключить поисковый и LLM-провайдеры; сейчас этот контур ещё не активирован."
+            try:
+                result = self.search.search(intent.text) if self.search else None
+                answer = self.assistant.answer(intent.text, result) if self.assistant else (result.answer if result else None)
+                if not answer:
+                    return "Информационный контур пока не настроен."
+                sources = ""
+                if result and result.sources:
+                    sources = "\n\nИсточники:\n" + "\n".join(f"• {title} — {url}" for title, url in result.sources[:5])
+                return answer + sources
+            except ResearchError as error:
+                return str(error)
         return "Я не хочу неверно угадать. Напишите, например: «Запомни ...», «Нужно ...», «Ева, нужно ...» или задайте вопрос с вопросительным знаком."
 
     def handle_message(self, chat_id: int, text: str) -> str:
@@ -222,7 +237,13 @@ def run_polling(data_path: str | Path = "data/aurora.json", env_path: str | Path
         os.environ.get("WEATHER_DEFAULT_CITY", "Saint Petersburg"),
         os.environ.get("WEATHER_DEFAULT_COUNTRY", ""),
     )
-    bot = AuroraTelegramBot(client, AuroraCore(data_path), owner_chat_id, eva_chat_id, weather)
+    search = None
+    if os.environ.get("WEB_SEARCH_API_KEY") and os.environ.get("WEB_SEARCH_BASE_URL"):
+        search = TavilySearch(os.environ["WEB_SEARCH_API_KEY"], os.environ["WEB_SEARCH_BASE_URL"])
+    assistant = None
+    if os.environ.get("GEMINI_API_KEY") and os.environ.get("GEMINI_MODEL"):
+        assistant = GeminiAssistant(os.environ["GEMINI_API_KEY"], os.environ["GEMINI_MODEL"])
+    bot = AuroraTelegramBot(client, AuroraCore(data_path), owner_chat_id, eva_chat_id, weather, search, assistant)
     offset = None
     print("AURORA Telegram adapter started. Press Ctrl+C to stop.")
     while True:
