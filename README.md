@@ -29,6 +29,8 @@
 
 Подробный сценарий первого запуска — в `docs/09_FIRST_LAUNCH.md`.
 
+Telegram interface setup is described in `docs/10_TELEGRAM_INTERFACE.md`.
+
 Пример локального запуска:
 
 ```powershell
