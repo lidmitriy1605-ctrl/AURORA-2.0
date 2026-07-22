@@ -33,7 +33,8 @@ Commands are optional. The bot recognises common Russian phrases locally:
 - `Запомни идею для проекта` saves a personal note.
 - `Нужно подготовить отчёт до пятницы` creates a personal task with a due date.
 - `Ева, нужно оплатить кружок до пятницы` creates a family task for Eva and notifies her after her chat is paired.
-- `Какая погода завтра?` and Internet questions are recognised but wait for their respective secure providers; the bot does not invent an answer.
+- `Какая погода завтра?` returns current conditions and tomorrow's forecast for the configured city through Open-Meteo.
+- Internet questions are recognised but wait for the search and LLM adapters; the bot does not invent an answer.
 
 The bottom Telegram keyboard provides **Today**, **Tasks**, **Calendar**, **Weather**, and **Summary**. It is an overview, not a replacement for natural conversation.
 

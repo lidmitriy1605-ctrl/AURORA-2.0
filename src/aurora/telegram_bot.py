@@ -16,6 +16,7 @@ from urllib.request import Request, urlopen
 
 from .core import AuroraCore
 from .intent import Intent, classify_message
+from .weather import OpenMeteoWeather, WeatherError
 
 
 def load_dotenv(path: str | Path = ".env") -> None:
@@ -73,11 +74,13 @@ class AuroraTelegramBot:
         core: AuroraCore,
         owner_chat_id: int | None = None,
         eva_chat_id: int | None = None,
+        weather: OpenMeteoWeather | None = None,
     ) -> None:
         self.client = client
         self.core = core
         self.owner_chat_id = owner_chat_id
         self.eva_chat_id = eva_chat_id
+        self.weather = weather
 
     @staticmethod
     def _help() -> str:
@@ -142,7 +145,12 @@ class AuroraTelegramBot:
         if intent.kind == "calendar":
             return "Я распознала запрос о календаре. Подключение календаря готовится; пока не создаю внешнее событие без вашего подтверждения."
         if intent.kind == "weather":
-            return "Я распознала запрос о погоде. Подключение погодного сервиса будет следующим внешним адаптером; пока не буду выдумывать прогноз."
+            if not self.weather:
+                return "Погодный сервис пока не настроен."
+            try:
+                return self.weather.forecast()
+            except WeatherError as error:
+                return str(error)
         if intent.kind == "research":
             return "Я распознала вопрос или запрос поиска. Для ответа с актуальными источниками нужно подключить поисковый и LLM-провайдеры; сейчас этот контур ещё не активирован."
         return "Я не хочу неверно угадать. Напишите, например: «Запомни ...», «Нужно ...», «Ева, нужно ...» или задайте вопрос с вопросительным знаком."
@@ -210,7 +218,11 @@ def run_polling(data_path: str | Path = "data/aurora.json", env_path: str | Path
     owner_chat_id = int(owner_value) if owner_value else None
     eva_chat_id = int(eva_value) if eva_value else None
     client = TelegramClient(token)
-    bot = AuroraTelegramBot(client, AuroraCore(data_path), owner_chat_id, eva_chat_id)
+    weather = OpenMeteoWeather(
+        os.environ.get("WEATHER_DEFAULT_CITY", "Saint Petersburg"),
+        os.environ.get("WEATHER_DEFAULT_COUNTRY", ""),
+    )
+    bot = AuroraTelegramBot(client, AuroraCore(data_path), owner_chat_id, eva_chat_id, weather)
     offset = None
     print("AURORA Telegram adapter started. Press Ctrl+C to stop.")
     while True:
