@@ -145,3 +145,24 @@ class AuroraCore:
         if actor != "dmitry":
             raise AccessDenied("Audit log is available to the system owner")
         return list(self.data["audit"])
+
+    def export_space(self, actor: str, space: str, destination: str | Path) -> Path:
+        """Write a portable copy of one permitted data space without overwriting a file."""
+        self._require_access(actor, space)
+        target = Path(destination)
+        if target.exists():
+            raise FileExistsError(f"Export already exists: {target}")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        exported = {
+            "format": "aurora-space-export/v1",
+            "exported_at": self._now(),
+            "space": space,
+            "exported_by": actor,
+            "notes": [note for note in self.data["notes"] if note["space"] == space],
+            "tasks": [task for task in self.data["tasks"] if task["space"] == space],
+        }
+        with target.open("x", encoding="utf-8") as file:
+            json.dump(exported, file, ensure_ascii=False, indent=2)
+        self._audit(actor, "space.exported", space)
+        self._save()
+        return target

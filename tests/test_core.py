@@ -35,6 +35,23 @@ class AuroraCoreTests(unittest.TestCase):
             self.core.confirm_critical_action("dmitry", request["id"])
         self.assertEqual(self.core.confirm_critical_action("eva", request["id"])["status"], "confirmed")
 
+    def test_export_contains_only_allowed_space(self):
+        self.core.add_note("dmitry", "dmitry", "private plan")
+        self.core.add_note("dmitry", "family", "shared plan")
+        destination = Path(self.directory.name) / "dmitry-export.json"
+        self.core.export_space("dmitry", "dmitry", destination)
+        content = destination.read_text(encoding="utf-8")
+        self.assertIn("private plan", content)
+        self.assertNotIn("shared plan", content)
+
+    def test_export_rejects_unpermitted_space_and_overwrite(self):
+        destination = Path(self.directory.name) / "export.json"
+        with self.assertRaises(AccessDenied):
+            self.core.export_space("eva", "dmitry", destination)
+        self.core.export_space("dmitry", "dmitry", destination)
+        with self.assertRaises(FileExistsError):
+            self.core.export_space("dmitry", "dmitry", destination)
+
 
 if __name__ == "__main__":
     unittest.main()

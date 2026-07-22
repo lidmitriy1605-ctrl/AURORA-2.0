@@ -28,3 +28,9 @@ $env:PYTHONPATH = 'src'
 python -m aurora.cli note-add dmitry dmitry 'Идея для AURORA'
 python -m aurora.cli task-list dmitry dmitry
 ```
+
+Экспорт одной разрешённой области данных создаёт новую JSON-копию и никогда не перезаписывает прежнюю:
+
+```powershell
+.\tools\backup.ps1 -Actor dmitry -Space dmitry
+```
