@@ -111,12 +111,15 @@ class AuroraTelegramBot:
         task = self.core.create_task(actor, space, intent.text, assignee=assignee, due_at=intent.due_at)
         recipient_chat = self.eva_chat_id if assignee == "eva" else self.owner_chat_id
         if recipient_chat and assignee != actor:
-            self.client.send_message(
-                recipient_chat,
-                f"AURORA: новая семейная задача для вас\n{self._task_line(task)}",
-                self.MENU,
-            )
-            notified = " Исполнителю отправлено уведомление."
+            try:
+                self.client.send_message(
+                    recipient_chat,
+                    f"AURORA: новая семейная задача для вас\n{self._task_line(task)}",
+                    self.MENU,
+                )
+                notified = " Исполнителю отправлено уведомление."
+            except TelegramApiError:
+                notified = " Задача сохранена, но уведомление пока не доставлено; попросите исполнителя открыть этого бота."
         elif assignee != actor:
             notified = " Уведомление будет отправлено после привязки Telegram-чата исполнителя."
         else:

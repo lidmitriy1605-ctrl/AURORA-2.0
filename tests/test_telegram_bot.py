@@ -14,6 +14,12 @@ class FakeTelegramClient:
         self.messages.append((chat_id, text, reply_markup))
 
 
+class FailingTelegramClient(FakeTelegramClient):
+    def send_message(self, chat_id, text, reply_markup=None):
+        from aurora.telegram_bot import TelegramApiError
+        raise TelegramApiError("recipient has not started the bot")
+
+
 class AuroraTelegramBotTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
@@ -55,3 +61,10 @@ class AuroraTelegramBotTests(unittest.TestCase):
         self.assertIsNotNone(tasks[0]["due_at"])
         self.assertIn("Исполнителю отправлено", reply)
         self.assertEqual(self.client.messages[0][0], 67890)
+
+    def test_task_is_saved_when_eva_notification_is_unavailable(self):
+        self.bot.client = FailingTelegramClient()
+        self.bot.eva_chat_id = 67890
+        reply = self.bot.handle_message(12345, "Ева, нужно оплатить кружок")
+        self.assertIn("Задача сохранена", reply)
+        self.assertEqual(len(self.bot.core.list_tasks("eva", "family")), 1)
