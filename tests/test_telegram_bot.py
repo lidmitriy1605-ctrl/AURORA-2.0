@@ -53,6 +53,22 @@ class AuroraTelegramBotTests(unittest.TestCase):
         self.assertIn("запомни", self.client.messages[0][1].casefold())
         self.assertIn("keyboard", self.client.messages[0][2])
 
+    def test_private_messages_are_remembered_in_personal_space(self):
+        self.bot.process_update({"message": {"message_id": 9, "chat": {"id": 12345}, "text": "обычное сообщение"}})
+        messages = self.bot.core.find_messages("dmitry", "dmitry")
+        self.assertEqual(messages[0]["text"], "обычное сообщение")
+
+    def test_family_group_messages_are_remembered_without_chatty_reply(self):
+        self.bot.family_chat_id = -100123
+        self.bot.process_update({"message": {"message_id": 10, "chat": {"id": -100123, "type": "supergroup"}, "from": {"id": 12345}, "text": "обсуждаем планы на выходные"}})
+        messages = self.bot.core.find_messages("eva", "family")
+        self.assertEqual(messages[0]["text"], "обсуждаем планы на выходные")
+        self.assertEqual(self.client.messages, [])
+
+    def test_owner_can_pair_family_group_without_exposing_data(self):
+        self.bot.process_update({"message": {"chat": {"id": -100123, "type": "supergroup"}, "from": {"id": 12345}, "text": "подключаем группу"}})
+        self.assertIn("-100123", self.client.messages[0][1])
+
     def test_natural_assignment_creates_family_task_and_notifies_eva(self):
         self.bot.eva_chat_id = 67890
         reply = self.bot.handle_message(12345, "Ева, нужно оплатить кружок до пятницы")

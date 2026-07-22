@@ -39,3 +39,16 @@ Commands are optional. The bot recognises common Russian phrases locally:
 The bottom Telegram keyboard provides **Today**, **Tasks**, **Calendar**, **Weather**, and **Summary**. It is an overview, not a replacement for natural conversation.
 
 To pair Eva, she sends `/start` to the bot. Add her returned chat ID locally as `TELEGRAM_EVA_CHAT_ID` in `.env`, then restart the adapter. This permits task notifications, but does not expose either user's personal notes.
+
+## Personal memory and the family group
+
+Every text message sent to AURORA in a private chat is retained in that user's local personal memory. Dmitry and Eva cannot read each other's personal messages through AURORA.
+
+To add the assistant to a family group:
+
+1. Add the bot as a member of the private Telegram group.
+2. In BotFather, disable **Group Privacy** for this bot (`/setprivacy` -> **Disable**) so Telegram delivers normal group messages to it.
+3. Send one ordinary message in the group. AURORA will reply with the group chat ID only if the group is not configured yet.
+4. Add that ID locally as `TELEGRAM_FAMILY_CHAT_ID` in `.env`, then restart the bot.
+
+After pairing, AURORA saves messages from Dmitry and Eva in the shared family memory. It stays quiet during normal conversation, while tasks, notes, calendar questions, weather questions and internet questions receive a response. Messages from unpaired group members are ignored.

@@ -21,7 +21,7 @@ class ConfirmationRequired(RuntimeError):
 
 
 class AuroraCore:
-    """Local storage and policy boundary for notes, tasks and confirmations."""
+    """Local storage and policy boundary for messages, notes, tasks and confirmations."""
 
     def __init__(self, data_path: str | Path = "data/aurora.json") -> None:
         self.path = Path(data_path)
@@ -29,10 +29,10 @@ class AuroraCore:
 
     def _load(self) -> dict:
         if not self.path.exists():
-            return {"notes": [], "tasks": [], "audit": [], "confirmations": []}
+            return {"messages": [], "notes": [], "tasks": [], "audit": [], "confirmations": []}
         with self.path.open("r", encoding="utf-8") as file:
             data = json.load(file)
-        for collection in ("notes", "tasks", "audit", "confirmations"):
+        for collection in ("messages", "notes", "tasks", "audit", "confirmations"):
             data.setdefault(collection, [])
         for task in data["tasks"]:
             task.setdefault("assignee", task.get("author", "dmitry"))
@@ -74,6 +74,39 @@ class AuroraCore:
         self._audit(actor, "note.created", note["id"])
         self._save()
         return note
+
+    def remember_message(
+        self,
+        actor: str,
+        space: str,
+        text: str,
+        chat_id: int | None = None,
+        message_id: int | None = None,
+        source: str = "telegram",
+    ) -> dict:
+        """Keep an inbound message in the permitted personal or family memory."""
+        self._require_access(actor, space)
+        if not text.strip():
+            raise ValueError("Message text cannot be empty")
+        message = {
+            "id": str(uuid4()), "space": space, "author": actor,
+            "text": text.strip(), "chat_id": chat_id, "message_id": message_id,
+            "source": source, "created_at": self._now(),
+        }
+        self.data["messages"].append(message)
+        self._audit(actor, "message.remembered", message["id"])
+        self._save()
+        return message
+
+    def find_messages(self, actor: str, space: str, query: str = "") -> list[dict]:
+        self._require_access(actor, space)
+        query = query.casefold().strip()
+        records = [message for message in self.data["messages"] if message["space"] == space]
+        if query:
+            records = [message for message in records if query in message["text"].casefold()]
+        self._audit(actor, "message.searched", space)
+        self._save()
+        return records
 
     def find_notes(self, actor: str, space: str, query: str = "") -> list[dict]:
         self._require_access(actor, space)

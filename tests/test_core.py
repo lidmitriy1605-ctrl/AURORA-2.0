@@ -23,6 +23,14 @@ class AuroraCoreTests(unittest.TestCase):
         found = self.core.find_notes("eva", "family", "groceries")
         self.assertEqual(found[0]["text"], "buy groceries")
 
+    def test_personal_and_family_messages_are_isolated(self):
+        self.core.remember_message("dmitry", "dmitry", "personal thought")
+        self.core.remember_message("dmitry", "family", "shared conversation")
+        self.assertEqual(self.core.find_messages("dmitry", "dmitry")[0]["text"], "personal thought")
+        self.assertEqual(self.core.find_messages("eva", "family")[0]["text"], "shared conversation")
+        with self.assertRaises(AccessDenied):
+            self.core.find_messages("eva", "dmitry")
+
     def test_task_status_change_is_audited(self):
         task = self.core.create_task("dmitry", "dmitry", "write MVP")
         self.core.update_task_status("dmitry", task["id"], "done")

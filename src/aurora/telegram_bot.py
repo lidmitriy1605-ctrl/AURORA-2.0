@@ -80,6 +80,7 @@ class AuroraTelegramBot:
         search: TavilySearch | None = None,
         assistant: GeminiAssistant | None = None,
         calendar: GoogleCalendar | None = None,
+        family_chat_id: int | None = None,
     ) -> None:
         self.client = client
         self.core = core
@@ -89,6 +90,7 @@ class AuroraTelegramBot:
         self.search = search
         self.assistant = assistant
         self.calendar = calendar
+        self.family_chat_id = family_chat_id
 
     @staticmethod
     def _help() -> str:
@@ -225,12 +227,43 @@ class AuroraTelegramBot:
             return "Unknown command. Send /help."
         return self._handle_natural(actor, text)
 
+    def _handle_family_message(self, actor: str, text: str) -> str | None:
+        """Answer only actionable group messages; ordinary discussion remains quiet."""
+        intent = classify_message(text, actor)
+        if intent.kind in {"task", "note", "calendar", "weather", "research", "today", "tasks"}:
+            return self._handle_natural(actor, text)
+        return None
+
     def process_update(self, update: dict) -> None:
         message = update.get("message")
         if not message or "text" not in message:
             return
         chat_id = message["chat"]["id"]
-        self.client.send_message(chat_id, self.handle_message(chat_id, message["text"]), self.MENU)
+        text = message["text"]
+        chat_type = message.get("chat", {}).get("type")
+        if self.family_chat_id is not None and chat_id == self.family_chat_id:
+            sender_id = message.get("from", {}).get("id")
+            actor = self._user_for_chat(sender_id)
+            if actor is None:
+                return
+            self.core.remember_message(actor, "family", text, chat_id, message.get("message_id"), "telegram-group")
+            reply = self._handle_family_message(actor, text)
+            if reply:
+                self.client.send_message(chat_id, reply, self.MENU)
+            return
+        if chat_type in {"group", "supergroup"}:
+            sender_id = message.get("from", {}).get("id")
+            if self.family_chat_id is None and self._user_for_chat(sender_id) is not None:
+                self.client.send_message(
+                    chat_id,
+                    f"AURORA is waiting for family-group pairing. Group chat ID: {chat_id}.\n"
+                    "Add it as TELEGRAM_FAMILY_CHAT_ID in the local .env file, then restart the bot.",
+                )
+            return
+        actor = self._user_for_chat(chat_id)
+        if actor is not None:
+            self.core.remember_message(actor, actor, text, chat_id, message.get("message_id"))
+        self.client.send_message(chat_id, self.handle_message(chat_id, text), self.MENU)
 
 
 def run_polling(data_path: str | Path = "data/aurora.json", env_path: str | Path = ".env") -> None:
@@ -238,8 +271,10 @@ def run_polling(data_path: str | Path = "data/aurora.json", env_path: str | Path
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
     owner_value = os.environ.get("TELEGRAM_OWNER_CHAT_ID", "").strip()
     eva_value = os.environ.get("TELEGRAM_EVA_CHAT_ID", "").strip()
+    family_value = os.environ.get("TELEGRAM_FAMILY_CHAT_ID", "").strip()
     owner_chat_id = int(owner_value) if owner_value else None
     eva_chat_id = int(eva_value) if eva_value else None
+    family_chat_id = int(family_value) if family_value else None
     client = TelegramClient(token)
     weather = OpenMeteoWeather(
         os.environ.get("WEATHER_DEFAULT_CITY", "Saint Petersburg"),
@@ -252,7 +287,7 @@ def run_polling(data_path: str | Path = "data/aurora.json", env_path: str | Path
     if os.environ.get("GEMINI_API_KEY") and os.environ.get("GEMINI_MODEL"):
         assistant = GeminiAssistant(os.environ["GEMINI_API_KEY"], os.environ["GEMINI_MODEL"])
     calendar = GoogleCalendar() if Path("secrets/google-calendar-client.json").exists() else None
-    bot = AuroraTelegramBot(client, AuroraCore(data_path), owner_chat_id, eva_chat_id, weather, search, assistant, calendar)
+    bot = AuroraTelegramBot(client, AuroraCore(data_path), owner_chat_id, eva_chat_id, weather, search, assistant, calendar, family_chat_id)
     offset = None
     print("AURORA Telegram adapter started. Press Ctrl+C to stop.")
     while True:
