@@ -16,6 +16,7 @@ from urllib.request import Request, urlopen
 
 from .core import AuroraCore
 from .intent import Intent, classify_message
+from .calendar import CalendarError, GoogleCalendar
 from .research import GeminiAssistant, ResearchError, TavilySearch
 from .weather import OpenMeteoWeather, WeatherError
 
@@ -78,6 +79,7 @@ class AuroraTelegramBot:
         weather: OpenMeteoWeather | None = None,
         search: TavilySearch | None = None,
         assistant: GeminiAssistant | None = None,
+        calendar: GoogleCalendar | None = None,
     ) -> None:
         self.client = client
         self.core = core
@@ -86,6 +88,7 @@ class AuroraTelegramBot:
         self.weather = weather
         self.search = search
         self.assistant = assistant
+        self.calendar = calendar
 
     @staticmethod
     def _help() -> str:
@@ -148,7 +151,12 @@ class AuroraTelegramBot:
         if intent.kind == "task":
             return self._create_task(actor, intent)
         if intent.kind == "calendar":
-            return "Я распознала запрос о календаре. Подключение календаря готовится; пока не создаю внешнее событие без вашего подтверждения."
+            if not self.calendar:
+                return "Google Calendar пока не подключён."
+            try:
+                return self.calendar.upcoming()
+            except CalendarError as error:
+                return str(error)
         if intent.kind == "weather":
             if not self.weather:
                 return "Погодный сервис пока не настроен."
@@ -243,7 +251,8 @@ def run_polling(data_path: str | Path = "data/aurora.json", env_path: str | Path
     assistant = None
     if os.environ.get("GEMINI_API_KEY") and os.environ.get("GEMINI_MODEL"):
         assistant = GeminiAssistant(os.environ["GEMINI_API_KEY"], os.environ["GEMINI_MODEL"])
-    bot = AuroraTelegramBot(client, AuroraCore(data_path), owner_chat_id, eva_chat_id, weather, search, assistant)
+    calendar = GoogleCalendar() if Path("secrets/google-calendar-client.json").exists() else None
+    bot = AuroraTelegramBot(client, AuroraCore(data_path), owner_chat_id, eva_chat_id, weather, search, assistant, calendar)
     offset = None
     print("AURORA Telegram adapter started. Press Ctrl+C to stop.")
     while True:
