@@ -1,0 +1,40 @@
+import tempfile
+import unittest
+from pathlib import Path
+
+from aurora.core import AccessDenied, AuroraCore
+
+
+class AuroraCoreTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.core = AuroraCore(Path(self.directory.name) / "aurora.json")
+
+    def tearDown(self):
+        self.directory.cleanup()
+
+    def test_personal_notes_are_isolated(self):
+        self.core.add_note("dmitry", "dmitry", "private idea")
+        with self.assertRaises(AccessDenied):
+            self.core.find_notes("eva", "dmitry", "idea")
+
+    def test_family_note_is_visible_to_both_users(self):
+        self.core.add_note("dmitry", "family", "buy groceries")
+        found = self.core.find_notes("eva", "family", "groceries")
+        self.assertEqual(found[0]["text"], "buy groceries")
+
+    def test_task_status_change_is_audited(self):
+        task = self.core.create_task("dmitry", "dmitry", "write MVP")
+        self.core.update_task_status("dmitry", task["id"], "done")
+        self.assertEqual(self.core.list_tasks("dmitry", "dmitry")[0]["status"], "done")
+        self.assertIn("task.status_changed", [event["action"] for event in self.core.audit_log("dmitry")])
+
+    def test_only_requester_can_confirm_critical_action(self):
+        request = self.core.request_critical_action("eva", "connect calendar")
+        with self.assertRaises(AccessDenied):
+            self.core.confirm_critical_action("dmitry", request["id"])
+        self.assertEqual(self.core.confirm_critical_action("eva", request["id"])["status"], "confirmed")
+
+
+if __name__ == "__main__":
+    unittest.main()

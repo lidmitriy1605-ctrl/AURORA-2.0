@@ -15,8 +15,16 @@
 
 ## Запуск
 
-Технический фундамент не требует сторонних библиотек. После его добавления проверки запускаются командой:
+Технический фундамент не требует сторонних библиотек. Проверки запускаются командой:
 
 ```powershell
-python -m unittest discover -s tests
+.\tools\verify.ps1
+```
+
+Пример локального запуска:
+
+```powershell
+$env:PYTHONPATH = 'src'
+python -m aurora.cli note-add dmitry dmitry 'Идея для AURORA'
+python -m aurora.cli task-list dmitry dmitry
 ```
